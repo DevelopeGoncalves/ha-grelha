@@ -1926,10 +1926,6 @@
               // 2. Pega o Link Público da imagem gerada
               const { data } = await window.supabaseClient.storage.from('cardapio').getPublicUrl(filePath);
               imgFinal = data.publicUrl;
-              
-
-              // SIMULAÇÃO TEMPORÁRIA (Para não quebrar a tela enquanto você está no Mock)
-              imgFinal = URL.createObjectURL(imagemUpload); 
           }
 
           const novoId = form.id || uid();
