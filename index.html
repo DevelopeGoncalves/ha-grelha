@@ -1075,10 +1075,18 @@
           e.preventDefault();
           setCarregando(true);
           try {
-              const secondaryApp = firebase.initializeApp(firebaseConfig, "SecondaryApp" + Date.now());
-              await secondaryApp.auth().createUserWithEmailAndPassword(form.email, form.password);
-              await secondaryApp.auth().signOut();
-              await secondaryApp.delete();
+              // Cria uma conexão secundária rápida com o Supabase só para criar o usuário
+              // O "persistSession: false" garante que você (Admin) NÃO seja deslogado da sua tela!
+              const secondarySupabase = supabase.createClient(supabaseUrl, supabaseKey, {
+                  auth: { persistSession: false } 
+              });
+
+              const { error } = await secondarySupabase.auth.signUp({ 
+                  email: form.email, 
+                  password: form.password 
+              });
+              
+              if (error) throw new Error(error.message);
 
               const novoUsuario = { email: form.email.toLowerCase(), nome: form.nome, role: form.role };
               const novos = [...usuarios, novoUsuario];
@@ -2462,27 +2470,17 @@
   /*********************
    * Registro de Perdas e Quebras (Correção de Produtos sem Custo)
    *********************/
-  function PerdasView({ produtos, insumos, salvarPerdas, salvarInsumos, salvarProdutos }){
+  function PerdasView({ produtos, insumos, perdas, salvarPerdas, salvarInsumos, salvarProdutos }){
     const [tipo, setTipo] = useState('insumo');
     const [itemId, setItemId] = useState('');
     const [quantidade, setQuantidade] = useState('');
     const [justificativa, setJustificativa] = useState('');
     
-    // Estado com os dados da nuvem em tempo real
-    const [historico, setHistorico] = useState([]);
-    
     // Estado do Filtro de Mês (Por padrão, abre no mês atual: YYYY-MM)
     const [mesFiltro, setMesFiltro] = useState(new Date().toISOString().slice(0, 7));
 
-    // Busca o histórico de perdas direto do Firebase para ficar em tempo real
-    useEffect(() => {
-        const unsub = firebase.firestore().collection("perdas").onSnapshot((snapshot) => {
-            const lista = [];
-            snapshot.forEach(doc => lista.push(doc.data()));
-            setHistorico(lista);
-        });
-        return () => unsub();
-    }, []); 
+    // Usamos as perdas que o App já baixou em tempo real (Evita tela branca por conexão duplicada)
+    const historico = perdas;
 
     const listaItens = tipo === 'insumo' ? insumos : produtos;
     const itemSelecionado = listaItens.find(i => i.id === itemId);
@@ -3614,7 +3612,7 @@
             {selected === 'produtos' && <ProdutosView produtos={produtos} salvarProdutos={salvarProdutos} insumos={insumos} />}
             {selected === 'insumos' && <InsumosView insumos={insumos} salvarInsumos={salvarInsumos} />}
             {selected === 'custo_insumos' && <CustoInsumosView produtos={produtos} insumos={insumos} />}
-            {selected === 'perdas' && <PerdasView produtos={produtos} insumos={insumos} salvarPerdas={salvarPerdas} salvarInsumos={salvarInsumos} salvarProdutos={salvarProdutos} />}
+            {selected === 'perdas' && <PerdasView produtos={produtos} insumos={insumos} perdas={perdas} salvarPerdas={salvarPerdas} salvarInsumos={salvarInsumos} salvarProdutos={salvarProdutos} />}
             {selected === 'relatorios' && <RelatoriosView vendas={vendas} perdas={perdas} produtos={produtos} />}
             {selected === 'avancado' && <RelatorioAvancado vendas={vendas} produtos={produtos} user={user} />}
           </main>
