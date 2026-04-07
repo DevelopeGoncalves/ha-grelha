@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KDS - Cozinha Thiago Santa Teresa</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  
+  <style>
+    body { background-color: #1a1a1a; color: white; font-family: sans-serif; }
+    
+    .kanban-column {
+      min-height: 85vh; border-radius: 1rem; padding: 1rem;
+      background: #262626; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      display: flex; flex-direction: column;
+    }
+    .kanban-header {
+      font-weight: 800; padding-bottom: 0.5rem; border-bottom: 3px solid;
+      margin-bottom: 1rem; font-size: 1.4rem; text-transform: uppercase; letter-spacing: 1px;
+    }
+    .kanban-scroll { flex: 1; overflow-y: auto; padding-right: 5px; }
+
+    /* Card Styling */
+    .card-pedido {
+        background-color: #333; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.4); position: relative; border-left: 5px solid #555;
+        transition: all 0.3s;
+    }
+    /* SLA Colors */
+    .sla-green { border-left-color: #10b981; }
+    .sla-yellow { border-left-color: #f59e0b; background-color: #42361c; }
+    .sla-red { border-left-color: #ef4444; background-color: #451a1a; animation: pulseRed 2s infinite; }
+
+    @keyframes pulseRed { 0% { box-shadow: 0 0 0 rgba(239, 68, 68, 0); } 70% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); } 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0); } }
+
+    .obs-highlight { background: #5a2828; color: #ffcccc; padding: 4px 8px; border-radius: 4px; font-weight: bold; margin-top: 5px; display: block; font-size: 0.9rem; }
+    
+    ::-webkit-scrollbar { width:8px; }
+    ::-webkit-scrollbar-thumb { background: #555; border-radius:4px; }
+  </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+  // ==========================================
+    // 🚀 ADAPTADOR SUPABASE (FIREBASE MOCK)
+    // ==========================================
+    const supabaseUrl = 'https://lqggnhrldvwnnwiyikaw.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxZ2duaHJsZHZ3bm53aXlpa2F3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1NjUyMTQsImV4cCI6MjA5MTE0MTIxNH0.8kZWSoU6Uo8m1oHlY9-g3209ozNQb_0-eMMkWn1s7X4';
+
+    window.supabaseClient = window.supabaseClient || supabase.createClient(supabaseUrl, supabaseKey);
+
+    window.firebase = {
+        auth: () => ({
+            onAuthStateChanged: (cb) => {
+                window.supabaseClient.auth.onAuthStateChange((event, session) => {
+                    if (session?.user) cb({ email: session.user.email, uid: session.user.id });
+                    else cb(null);
+                });
+                window.supabaseClient.auth.getSession().then(({ data }) => {
+                    if (data?.session?.user) cb({ email: data.session.user.email, uid: data.session.user.id });
+                });
+                return () => { };
+            },
+            signInWithEmailAndPassword: async (email, password) => {
+                const { error } = await window.supabaseClient.auth.signInWithPassword({ email, password });
+                if (error) throw new Error(error.message);
+                return true;
+            },
+            signOut: async () => {
+                await window.supabaseClient.auth.signOut();
+            },
+            createUserWithEmailAndPassword: async (email, password) => {
+                const { error } = await window.supabaseClient.auth.signUp({ email, password });
+                if (error) throw new Error(error.message);
+                return true;
+            }
+        }),
+        initializeApp: () => window.firebase,
+        firestore: () => {
+            return {
+                collection: (colName) => ({
+                    doc: (docId) => {
+                        const ref = { _col: colName, _id: String(docId) };
+                        ref.get = async () => {
+                            const { data, error } = await window.supabaseClient.from(colName).select('*').eq('id', String(docId)).single();
+                            if (error || !data) return { exists: false, data: () => null };
+                            return { exists: true, data: () => data };
+                        };
+                        ref.set = async (payload) => {
+                            await window.supabaseClient.from(colName).upsert({ id: String(docId), ...payload });
+                        };
+                        ref.update = async (payload) => {
+                            await window.supabaseClient.from(colName).update(payload).eq('id', String(docId));
+                        };
+                        ref.delete = async () => {
+                            await window.supabaseClient.from(colName).delete().eq('id', String(docId));
+                        };
+                        return ref;
+                    },
+                    get: async () => {
+                        const { data } = await window.supabaseClient.from(colName).select('*');
+                        const arr = data || [];
+                        return { empty: arr.length === 0, forEach: cb => arr.forEach(item => cb({ data: () => item })) };
+                    },
+                    where: (field, op, val) => ({
+                        get: async () => {
+                            const { data } = await window.supabaseClient.from(colName).select('*').eq(field, val);
+                            const arr = data || [];
+                            return { empty: arr.length === 0, forEach: cb => arr.forEach(item => cb({ data: () => item })) };
+                        },
+                        onSnapshot: (cb) => {
+                            window.supabaseClient.from(colName).select('*').eq(field, val).then(({ data }) => {
+                                const arr = data || [];
+                                cb({ empty: arr.length === 0, docChanges: () => arr.map(i => ({ type: 'added', doc: { data: () => i } })), forEach: fn => arr.forEach(i => fn({ data: () => i })) });
+                            });
+                            const filterStr = `${field}=eq.${val}`;
+                            const channel = window.supabaseClient.channel(`public:${colName}:${filterStr}`)
+                                .on('postgres_changes', { event: '*', schema: 'public', table: colName, filter: filterStr }, payload => {
+                                    window.supabaseClient.from(colName).select('*').eq(field, val).then(({ data }) => {
+                                        const arr = data || [];
+                                        cb({ empty: arr.length === 0, docChanges: () => arr.map(i => ({ type: 'added', doc: { data: () => i } })), forEach: fn => arr.forEach(i => fn({ data: () => i })) });
+                                    });
+                                }).subscribe();
+                            return () => window.supabaseClient.removeChannel(channel);
+                        }
+                    }),
+                    onSnapshot: (cb) => {
+                        window.supabaseClient.from(colName).select('*').then(({ data }) => {
+                            const arr = data || [];
+                            cb({ empty: arr.length === 0, docChanges: () => arr.map(i => ({ type: 'added', doc: { data: () => i } })), forEach: fn => arr.forEach(i => fn({ data: () => i })) });
+                        });
+                        const channel = window.supabaseClient.channel(`public:${colName}`)
+                            .on('postgres_changes', { event: '*', schema: 'public', table: colName }, payload => {
+                                window.supabaseClient.from(colName).select('*').then(({ data }) => {
+                                    const arr = data || [];
+                                    cb({ empty: arr.length === 0, docChanges: () => arr.map(i => ({ type: 'added', doc: { data: () => i } })), forEach: fn => arr.forEach(i => fn({ data: () => i })) });
+                                });
+                            }).subscribe();
+                        return () => window.supabaseClient.removeChannel(channel);
+                    }
+                }),
+                batch: () => {
+                    let ops = [];
+                    return {
+                        update: (ref, data) => ops.push({ type: 'update', col: ref._col, id: ref._id, data }),
+                        delete: (ref) => ops.push({ type: 'delete', col: ref._col, id: ref._id }),
+                        commit: async () => {
+                            for (let op of ops) {
+                                if (op.type === 'update') await window.supabaseClient.from(op.col).update(op.data).eq('id', op.id);
+                                if (op.type === 'delete') await window.supabaseClient.from(op.col).delete().eq('id', op.id);
+                            }
+                        }
+                    };
+                }
+            };
+        }
+    };
+    window.firebase.firestore.FieldValue = { serverTimestamp: () => new Date().toISOString() };
+    const db = window.firebase.firestore();
+    // ==========================================
+
+    const notificationSound = new Audio('img/alerta.mp3');
+
+    // COMPONENTE DE LOGIN DA COZINHA
+    function Login() {
+        const [email, setEmail] = useState('');
+        const [senha, setSenha] = useState('');
+        const [erro, setErro] = useState('');
+        const [loading, setLoading] = useState(false);
+
+        const handleLogin = async (e) => {
+            e.preventDefault();
+            setLoading(true); setErro('');
+            try {
+                await firebase.auth().signInWithEmailAndPassword(email, senha);
+            } catch (err) {
+                setErro("Acesso negado. E-mail ou senha incorretos.");
+                setLoading(false);
+            }
+        };
+
+        return (
+            <div className="h-screen flex items-center justify-center bg-[#1a1a1a] p-4">
+                <form onSubmit={handleLogin} className="bg-[#262626] p-8 rounded-xl shadow-2xl max-w-sm w-full border border-gray-700 text-center">
+                    <img src="img/logo.jpg" alt="Logo" className="w-32 h-32 rounded-full border-2 border-orange-500 mx-auto mb-4 object-cover shadow-lg" />
+                    <h2 className="text-3xl font-extrabold text-orange-500 mb-6">👨‍🍳 Cozinha</h2>
+                    <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="E-mail de Acesso" className="w-full p-3 mb-4 bg-[#333] text-white rounded outline-none focus:ring-2 focus:ring-orange-500" required />
+                    <input type="password" value={senha} onChange={e=>setSenha(e.target.value)} placeholder="Senha" className="w-full p-3 mb-4 bg-[#333] text-white rounded outline-none focus:ring-2 focus:ring-orange-500" required />
+                    {erro && <div className="text-red-400 text-sm mb-4 text-center font-bold">{erro}</div>}
+                    <button disabled={loading} className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded transition text-lg shadow-lg">
+                        {loading ? 'Conectando à Nuvem...' : 'Liberar Acesso'}
+                    </button>
+                </form>
+            </div>
+        );
+    }
+
+    // COMPONENTE PRINCIPAL DA COZINHA
+    function CozinhaView() {
+        const [pedidos, setPedidos] = useState([]);
+        const [somAtivo, setSomAtivo] = useState(true);
+        const [currentTime, setCurrentTime] = useState(Date.now());
+        const isFirstLoad = useRef(true);
+
+        // Estados de Segurança
+        const [isLoggedIn, setIsLoggedIn] = useState(false);
+        const [loadingAuth, setLoadingAuth] = useState(true);
+
+        // 1. Verifica se a Cozinha está autorizada
+        useEffect(() => {
+            const unsubscribe = firebase.auth().onAuthStateChanged((user) => {
+                if (user) setIsLoggedIn(true);
+                else setIsLoggedIn(false);
+                setLoadingAuth(false);
+            });
+            return () => unsubscribe();
+        }, []);
+
+        // 2. Escuta os Pedidos na Nuvem (Apenas se estiver autorizado!)
+        useEffect(() => {
+            if (!isLoggedIn) return;
+
+            const unsubscribe = db.collection("pedidos")
+                .where("status", "in", ["Pendente", "Em Preparo", "Pronto"])
+                .onSnapshot((snapshot) => {
+                    const lista = [];
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        if(data.id) lista.push(data);
+                    });
+                    
+                    // Toca o som se chegar pedido novo
+                    snapshot.docChanges().forEach((change) => {
+                        if (change.type === "added" && !isFirstLoad.current) {
+                            if (somAtivo) notificationSound.play().catch(e => console.log("Audio bloqueado"));
+                        }
+                    });
+
+                    lista.sort((a,b) => new Date(a.data) - new Date(b.data));
+                    setPedidos(lista);
+                    isFirstLoad.current = false;
+                }, (error) => {
+                    console.error("Erro ao ler pedidos:", error);
+                });
+
+            const timerInterval = setInterval(() => setCurrentTime(Date.now()), 60000);
+            return () => { unsubscribe(); clearInterval(timerInterval); };
+        }, [somAtivo, isLoggedIn]);
+
+        // Ações de Atualização Segura
+        const atualizarStatus = (id, novoStatus) => {
+            db.collection("pedidos").doc(id.toString()).update({ status: novoStatus })
+            .catch(err => alert("Erro de Segurança: " + err.message));
+        };
+
+        const getClassSLA = (dataString) => {
+            if (!dataString) return 'sla-green';
+            const diffMinutes = (currentTime - new Date(dataString).getTime()) / 60000;
+            if (diffMinutes > 20) return 'sla-red';
+            if (diffMinutes > 10) return 'sla-yellow';
+            return 'sla-green';
+        };
+        
+        const getTempoDecorrido = (dataString) => {
+            if (!dataString) return '0 min';
+            const diff = Math.floor((currentTime - new Date(dataString).getTime()) / 60000);
+            return `${diff} min`;
+        };
+
+        const fila = pedidos.filter(p => p.status === 'Pendente');
+        const preparo = pedidos.filter(p => p.status === 'Em Preparo');
+        const prontos = pedidos.filter(p => p.status === 'Pronto');
+
+        // Telas de Bloqueio
+        if (loadingAuth) return <div className="h-screen flex items-center justify-center bg-[#1a1a1a] text-orange-500 text-2xl font-bold">Verificando Segurança...</div>;
+        if (!isLoggedIn) return <Login />;
+
+        return (
+        <div className="p-4 h-screen flex flex-col">
+            <header className="flex justify-between items-center mb-6 bg-gray-800 p-4 rounded-xl border border-gray-700 shadow-lg">
+                <div className="flex items-center gap-4">
+                    <h1 className="text-3xl font-bold text-orange-500">👨‍🍳 KDS Cozinha</h1>
+                    <button onClick={() => firebase.auth().signOut()} className="text-xs bg-gray-600 hover:bg-red-600 px-3 py-1 rounded text-white font-bold transition">Sair / Trocar Usuário</button>
+                </div>
+                <div className="flex gap-4 items-center">
+                    <button onClick={() => setSomAtivo(!somAtivo)} className={`px-4 py-2 rounded-lg font-bold shadow ${somAtivo ? 'bg-green-600' : 'bg-red-600'}`}>
+                        {somAtivo ? '🔊 Som ON' : '🔇 Som OFF'}
+                    </button>
+                    <div className="text-right text-sm text-gray-400 font-mono text-lg">{new Date().toLocaleTimeString()}</div>
+                </div>
+            </header>
+
+            <div className="grid grid-cols-3 gap-6 flex-1 overflow-hidden">
+                <div className="kanban-column border-t-4 border-yellow-500">
+                    <h2 className="kanban-header text-yellow-400">⏳ Fila ({fila.length})</h2>
+                    <div className="kanban-scroll space-y-3">
+                        {fila.map(p => (
+                            <div key={p.id} className={`card-pedido ${getClassSLA(p.inicioPreparo || p.data)}`}>
+                                <div className="flex justify-between font-bold text-lg mb-1">
+                                    <span>{p.nomeCliente}</span>
+                                    <span className="text-sm opacity-70">{getTempoDecorrido(p.inicioPreparo || p.data)}</span>
+                                </div>
+                                <ul className="text-sm list-disc pl-4 mb-3">
+                                    {p.itens.map((i, idx) => (
+                                        <li key={idx}><span className="font-bold">{i.quantidade}x</span> {i.nome} {i.obs && <span className="obs-highlight">⚠️ {i.obs}</span>}</li>
+                                    ))}
+                                </ul>
+                                <button onClick={() => atualizarStatus(p.id, 'Em Preparo')} className="w-full bg-yellow-600 hover:bg-yellow-500 py-2 rounded font-bold text-white transition">🔥 Iniciar Preparo</button>
+                            </div>
+                        ))}
+                        {fila.length === 0 && <div className="text-center text-gray-500 mt-10">Cozinha livre</div>}
+                    </div>
+                </div>
+
+                <div className="kanban-column border-t-4 border-orange-500">
+                    <h2 className="kanban-header text-orange-400">🔥 Preparando ({preparo.length})</h2>
+                    <div className="kanban-scroll space-y-3">
+                        {preparo.map(p => (
+                            <div key={p.id} className={`card-pedido ${getClassSLA(p.inicioPreparo || p.data)}`}>
+                                <div className="flex justify-between font-bold text-lg mb-1">
+                                    <span>{p.nomeCliente}</span>
+                                    <span className="text-sm opacity-70">{getTempoDecorrido(p.inicioPreparo || p.data)}</span>
+                                </div>
+                                <ul className="text-sm list-disc pl-4 mb-3">
+                                    {p.itens.map((i, idx) => (
+                                        <li key={idx} className="text-lg"><span className="font-bold">{i.quantidade}x</span> {i.nome} {i.obs && <span className="obs-highlight">⚠️ {i.obs}</span>}</li>
+                                    ))}
+                                </ul>
+                                <button onClick={() => atualizarStatus(p.id, 'Pronto')} className="w-full bg-green-600 hover:bg-green-500 py-3 rounded font-bold text-white text-lg transition">✅ PRONTO</button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="kanban-column border-t-4 border-green-500">
+                    <h2 className="kanban-header text-green-400">🛎️ Prontos ({prontos.length})</h2>
+                    <div className="kanban-scroll space-y-3">
+                        {prontos.map(p => (
+                            <div key={p.id} className="card-pedido bg-green-900/20 border-green-600/50 opacity-90">
+                                <div className="flex justify-between font-bold text-lg mb-2">
+                                    <span className="text-green-300">{p.nomeCliente}</span>
+                                    <span className="text-xs border border-green-500 rounded px-2 flex items-center">Aguardando Entrega</span>
+                                </div>
+                                <ul className="text-sm list-disc pl-4 mb-3 text-gray-400">
+                                    {p.itens.map((i, idx) => <li key={idx}>{i.quantidade}x {i.nome}</li>)}
+                                </ul>
+                                <div className="text-center text-xs text-gray-500 mt-2">* Finalize a conta no PDV (Caixa) *</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+        );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<CozinhaView />);
+</script>
+</body>
+</html>

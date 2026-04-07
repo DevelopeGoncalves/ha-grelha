@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bar VictorinoEng - Cardápio Digital</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --terracota: #e4593c;
+            --red-brown: #a93131;
+            --dark: #1a1a1a;
+            --light: #fff;
+            --success: #10b981;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d1f1f 100%);
+            color: var(--light);
+            overflow-x: hidden;
+            padding-bottom: 100px;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed; top: 20px; right: 20px;
+            background: white; color: var(--dark);
+            padding: 15px 25px; border-radius: 10px;
+            border-left: 5px solid var(--terracota);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            z-index: 9999; transform: translateX(200%); transition: transform 0.3s ease;
+        }
+        .toast.show { transform: translateX(0); }
+
+        /* Header Animado */
+        .header {
+            background: linear-gradient(135deg, var(--terracota) 0%, var(--red-brown) 100%);
+            padding: 2rem; text-align: center; position: relative;
+            box-shadow: 0 10px 40px rgba(228, 89, 60, 0.3);
+        }
+        .header h1 { font-size: 2.5rem; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        .header p { font-size: 1.1rem; opacity: 0.95; }
+        .mesa-info {
+            background: rgba(0,0,0,0.2); display: inline-block;
+            padding: 5px 15px; border-radius: 20px; margin-top: 10px; font-weight: bold;
+            border: 1px solid rgba(255,255,255,0.3);
+            animation: pulse 2s infinite;
+        }
+
+        /* Busca e Tabs */
+        .search-container { max-width: 600px; margin: -25px auto 30px; padding: 0 20px; position: relative; z-index: 10; }
+        .search-box {
+            width: 100%; padding: 15px 20px; border: none; border-radius: 50px;
+            font-size: 1rem; background: rgba(255, 255, 255, 0.95); color: var(--dark);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .tabs { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; padding: 0 20px; max-width: 1200px; margin: 0 auto 30px; }
+        .tab {
+            padding: 10px 20px; background: rgba(255, 255, 255, 0.1); border: 1px solid transparent;
+            border-radius: 30px; cursor: pointer; transition: all 0.3s; color: #ddd;
+        }
+        .tab.active { background: var(--terracota); color: white; border-color: var(--terracota); }
+
+        /* Grid */
+        .menu-container { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+        .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 25px; }
+
+        /* Card */
+        .product-card {
+            background: rgba(255, 255, 255, 0.05); border-radius: 15px; overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1); transition: transform 0.3s;
+            display: flex; flex-direction: column;
+        }
+        .product-image {
+            height: 180px; background: #2d2d2d; display: flex; align-items: center; justify-content: center;
+            font-size: 3rem; overflow: hidden; position: relative;
+        }
+        .product-image img { width: 100%; height: 100%; object-fit: cover; }
+        .product-info { padding: 15px; flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between; }
+        .product-name { font-size: 1.2rem; font-weight: bold; margin-bottom: 5px; }
+        .product-desc { font-size: 0.85rem; color: #aaa; margin-bottom: 8px; font-style: italic; }
+        .product-badges { display: flex; gap: 5px; margin-bottom: 10px; flex-wrap: wrap; }
+        .badge { padding: 3px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: bold; }
+        .badge-alcool { background: #ef4444; color: white; }
+        .product-price { font-size: 1.5rem; font-weight: bold; color: var(--terracota); margin-bottom: 10px; }
+
+        /* Inputs do Card */
+        .obs-input {
+            width: 100%; background: rgba(0,0,0,0.3); border: 1px solid #444; color: white;
+            padding: 8px; border-radius: 8px; margin-bottom: 10px; font-size: 0.9rem;
+            resize: none;
+        }
+        .option-controls select {
+            width: 100%; padding: 8px; margin-bottom: 10px; background: #333; color: white;
+            border: 1px solid #555; border-radius: 8px;
+        }
+        .add-btn {
+            width: 100%; padding: 12px; background: var(--terracota); border: none; border-radius: 8px;
+            color: white; font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        .add-btn:active { transform: scale(0.98); }
+
+        /* Floating Buttons */
+        .float-actions { position: fixed; bottom: 30px; right: 30px; display: flex; flex-direction: column; gap: 15px; z-index: 1000; }
+        .float-btn {
+            width: 60px; height: 60px; border-radius: 50%; border: none; color: white;
+            font-size: 1.5rem; cursor: pointer; box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+            display: flex; align-items: center; justify-content: center; position: relative;
+            transition: transform 0.3s;
+        }
+        .btn-cart { background: var(--terracota); }
+        .btn-waiter { background: #333; border: 2px solid var(--terracota); }
+        .btn-orders { background: #0ea5e9; }
+        .float-btn:hover { transform: scale(1.1); }
+        .cart-count {
+            position: absolute; top: -5px; right: -5px; background: white; color: var(--terracota);
+            width: 25px; height: 25px; border-radius: 50%; font-size: 0.8rem; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* Modais */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 2000; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .modal.active { display: flex; animation: fadeIn 0.3s; }
+        .modal-content {
+            background: #2d2d2d; width: 100%; max-width: 500px; padding: 30px;
+            border-radius: 20px; border: 1px solid #444; position: relative;
+            max-height: 85vh; overflow-y: auto;
+        }
+        .close-btn { position: absolute; top: 15px; right: 15px; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; }
+        
+        .cart-item {
+            background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px;
+            margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+        }
+        .cart-obs { font-size: 0.8rem; color: #aaa; margin-top: 5px; font-style: italic; }
+        
+        .order-status-card {
+            background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px;
+            margin-bottom: 15px; border-left: 4px solid #555;
+        }
+        .status-badge {
+            display: inline-block; padding: 4px 10px; border-radius: 15px;
+            font-size: 0.8rem; font-weight: bold; margin-top: 5px;
+        }
+        .st-pendente { background: #f59e0b; color: black; }
+        .st-preparo { background: #3b82f6; color: white; }
+        .st-pronto { background: #10b981; color: white; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+    <div id="toast" class="toast">Item adicionado!</div>
+
+    <div class="modal" id="modalIdentificacao">
+        <div class="modal-content" style="text-align: center;">
+            <h2 id="modalTitle" style="color: var(--terracota); margin-bottom: 15px;">Bem-vindo!</h2>
+            <p id="modalSubtitle" style="margin-bottom: 20px; color: #ccc;">Por favor, digite o número da sua mesa.</p>
+            
+            <input type="number" id="inputNumMesa" placeholder="Ex: 5" 
+                   style="width: 100%; padding: 15px; border-radius: 10px; border: none; margin-bottom: 25px; text-align: center; font-size: 2rem; background:white; color:black; font-weight:bold;">
+            
+            <button class="add-btn" onclick="salvarIdentificacaoManual()">Confirmar</button>
+        </div>
+    </div>
+
+    <header class="header">
+        <img src="img/logo.jpg" alt="Logo VictorinoEng" style="width: 130px; height: 130px; border-radius: 50%; border: 4px solid white; object-fit: cover; margin-bottom: 15px; box-shadow: 0 5px 25px rgba(0,0,0,0.5);">
+        <h1>🍷 Bar VictorinoEng</h1>
+        <p>Restaurante & Bar</p>
+        <div id="mesaDisplay" class="mesa-info" style="display: none;"></div>
+    </header>
+
+    <div class="search-container">
+        <input type="text" class="search-box" id="searchInput" placeholder="O que você deseja comer ou beber hoje?">
+    </div>
+
+    <div class="tabs" id="tabs">
+        <button class="tab active" data-category="petiscar">🥘 Petiscar</button>
+        <button class="tab" data-category="softs">🥤 Softs & Cervejas</button>
+        <button class="tab" data-category="mocktails">🍹 Mocktails</button>
+        <button class="tab" data-category="cocktails">🍸 Cocktails</button>
+        <button class="tab" data-category="doses">🥃 Doses</button>
+    </div>
+
+    <div class="menu-container">
+        <div class="menu-grid" id="menuGrid"></div>
+    </div>
+
+    <div class="float-actions">
+        <button class="float-btn btn-orders" onclick="abrirMeusPedidos()" title="Meus Pedidos">📋</button>
+        <button class="float-btn btn-cart" onclick="abrirCarrinho()">
+            🛒
+            <span class="cart-count" id="cartCount">0</span>
+        </button>
+    </div>
+
+    <div class="modal" id="cartModal">
+        <div class="modal-content">
+            <button class="close-btn" onclick="fecharModal('cartModal')">✕</button>
+            <h2 style="color: var(--terracota); margin-bottom: 20px;">🛒 Seu Pedido</h2>
+            <div id="cartItems"></div>
+            <div style="margin-top: 20px; border-top: 1px solid #444; padding-top: 15px; display: flex; justify-content: space-between; font-size: 1.2rem; font-weight: bold;">
+                <span>Total:</span>
+                <span id="cartTotal">R$ 0,00</span>
+            </div>
+            <button class="add-btn" style="margin-top: 20px; font-size: 1.2rem;" onclick="finalizarPedido()">Enviar Pedido 🚀</button>
+        </div>
+    </div>
+
+    <div class="modal" id="ordersModal">
+        <div class="modal-content">
+            <button class="close-btn" onclick="fecharModal('ordersModal')">✕</button>
+            <h2 style="color: #0ea5e9; margin-bottom: 20px;">📋 Acompanhamento</h2>
+            <div id="ordersList"></div>
+        </div>
+    </div>
+
+    <div class="modal" id="successModal">
+        <div class="modal-content" style="text-align: center;">
+            <h2 style="font-size: 3rem; margin-bottom: 10px;">✅</h2>
+            <h3 style="color: var(--success); margin-bottom: 10px;">Pedido Enviado!</h3>
+            <p style="color: #ccc;">A cozinha já recebeu seu pedido.</p>
+            <button class="add-btn" onclick="window.location.reload()" style="margin-top: 20px;">Fazer Novo Pedido</button>
+        </div>
+    </div>
+
+    <script>
+
+        // ==========================================
+    // 🚀 ADAPTADOR SUPABASE (FIREBASE MOCK)
+    // ==========================================
+    const supabaseUrl = 'https://lqggnhrldvwnnwiyikaw.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxZ2duaHJsZHZ3bm53aXlpa2F3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1NjUyMTQsImV4cCI6MjA5MTE0MTIxNH0.8kZWSoU6Uo8m1oHlY9-g3209ozNQb_0-eMMkWn1s7X4';
+
+    window.supabaseClient = window.supabaseClient || supabase.createClient(supabaseUrl, supabaseKey);
+
+    window.firebase = {
+        auth: () => ({
+            onAuthStateChanged: (cb) => {
+                window.supabaseClient.auth.onAuthStateChange((event, session) => {
+                    if (session?.user) cb({ email: session.user.email, uid: session.user.id });
+                    else cb(null);
+                });
+                window.supabaseClient.auth.getSession().then(({ data }) => {
+                    if (data?.session?.user) cb({ email: data.session.user.email, uid: data.session.user.id });
+                });
+                return () => { };
+            },
+            signInWithEmailAndPassword: async (email, password) => {
+                const { error } = await window.supabaseClient.auth.signInWithPassword({ email, password });
+                if (error) throw new Error(error.message);
+                return true;
+            },
+            signOut: async () => {
+                await window.supabaseClient.auth.signOut();
+            },
+            createUserWithEmailAndPassword: async (email, password) => {
+                const { error } = await window.supabaseClient.auth.signUp({ email, password });
+                if (error) throw new Error(error.message);
+                return true;
+            }
+        }),
+        initializeApp: () => window.firebase,
+        firestore: () => {
+            return {
+                collection: (colName) => ({
+                    doc: (docId) => {
+                        const ref = { _col: colName, _id: String(docId) };
+                        ref.get = async () => {
+                            const { data, error } = await window.supabaseClient.from(colName).select('*').eq('id', String(docId)).single();
+                            if (error || !data) return { exists: false, data: () => null };
+                            return { exists: true, data: () => data };
+                        };
+                        ref.set = async (payload) => {
+                            await window.supabaseClient.from(colName).upsert({ id: String(docId), ...payload });
+                        };
+                        ref.update = async (payload) => {
+                            await window.supabaseClient.from(colName).update(payload).eq('id', String(docId));
+                        };
+                        ref.delete = async () => {
+                            await window.supabaseClient.from(colName).delete().eq('id', String(docId));
+                        };
+                        return ref;
+                    },
+                    get: async () => {
+                        const { data } = await window.supabaseClient.from(colName).select('*');
+                        const arr = data || [];
+                        return { empty: arr.length === 0, forEach: cb => arr.forEach(item => cb({ data: () => item })) };
+                    },
+                    where: (field, op, val) => ({
+                        get: async () => {
+                            const { data } = await window.supabaseClient.from(colName).select('*').eq(field, val);
+                            const arr = data || [];
+                            return { empty: arr.length === 0, forEach: cb => arr.forEach(item => cb({ data: () => item })) };
+                        },
+                        onSnapshot: (cb) => {
+                            window.supabaseClient.from(colName).select('*').eq(field, val).then(({ data }) => {
+                                const arr = data || [];
+                                cb({ empty: arr.length === 0, docChanges: () => arr.map(i => ({ type: 'added', doc: { data: () => i } })), forEach: fn => arr.forEach(i => fn({ data: () => i })) });
+                            });
+                            const filterStr = `${field}=eq.${val}`;
+                            const channel = window.supabaseClient.channel(`public:${colName}:${filterStr}`)
+                                .on('postgres_changes', { event: '*', schema: 'public', table: colName, filter: filterStr }, payload => {
+                                    window.supabaseClient.from(colName).select('*').eq(field, val).then(({ data }) => {
+                                        const arr = data || [];
+                                        cb({ empty: arr.length === 0, docChanges: () => arr.map(i => ({ type: 'added', doc: { data: () => i } })), forEach: fn => arr.forEach(i => fn({ data: () => i })) });
+                                    });
+                                }).subscribe();
+                            return () => window.supabaseClient.removeChannel(channel);
+                        }
+                    }),
+                    onSnapshot: (cb) => {
+                        window.supabaseClient.from(colName).select('*').then(({ data }) => {
+                            const arr = data || [];
+                            cb({ empty: arr.length === 0, docChanges: () => arr.map(i => ({ type: 'added', doc: { data: () => i } })), forEach: fn => arr.forEach(i => fn({ data: () => i })) });
+                        });
+                        const channel = window.supabaseClient.channel(`public:${colName}`)
+                            .on('postgres_changes', { event: '*', schema: 'public', table: colName }, payload => {
+                                window.supabaseClient.from(colName).select('*').then(({ data }) => {
+                                    const arr = data || [];
+                                    cb({ empty: arr.length === 0, docChanges: () => arr.map(i => ({ type: 'added', doc: { data: () => i } })), forEach: fn => arr.forEach(i => fn({ data: () => i })) });
+                                });
+                            }).subscribe();
+                        return () => window.supabaseClient.removeChannel(channel);
+                    }
+                }),
+                batch: () => {
+                    let ops = [];
+                    return {
+                        update: (ref, data) => ops.push({ type: 'update', col: ref._col, id: ref._id, data }),
+                        delete: (ref) => ops.push({ type: 'delete', col: ref._col, id: ref._id }),
+                        commit: async () => {
+                            for (let op of ops) {
+                                if (op.type === 'update') await window.supabaseClient.from(op.col).update(op.data).eq('id', op.id);
+                                if (op.type === 'delete') await window.supabaseClient.from(op.col).delete().eq('id', op.id);
+                            }
+                        }
+                    };
+                }
+            };
+        }
+    };
+    window.firebase.firestore.FieldValue = { serverTimestamp: () => new Date().toISOString() };
+    const db = window.firebase.firestore();
+    // ==========================================
+
+
+        // --- ESTADO ---
+        let carrinho = [];
+        let identificacaoMesa = '';
+        let allItems = [];
+        let categorias = [];
+
+        // --- INICIALIZAÇÃO 100% NUVEM ---
+        async function init() {
+            await carregarProdutosDaNuvem();
+            
+            // Auto-detecção de Mesa ou Sessão (Sem LocalStorage Permanente)
+            const path = window.location.pathname;
+            const matchArquivo = path.match(/mesa(\d+)/i);
+            const urlParams = new URLSearchParams(window.location.search);
+            const mesaParam = urlParams.get('mesa');
+
+            let mesaAuto = null;
+            if (matchArquivo) mesaAuto = matchArquivo[1];
+            else if (mesaParam) mesaAuto = mesaParam < 10 && mesaParam.length < 2 ? '0'+mesaParam : mesaParam;
+
+            if (mesaAuto) {
+                identificacaoMesa = `Mesa ${mesaAuto}`;
+                sessionStorage.setItem('mesa_sessao', identificacaoMesa);
+                atualizarHeaderMesa();
+                document.getElementById('modalIdentificacao').classList.remove('active');
+            } else {
+                const salvo = sessionStorage.getItem('mesa_sessao');
+                if (salvo) {
+                    identificacaoMesa = salvo;
+                    atualizarHeaderMesa();
+                } else {
+                    document.getElementById('modalIdentificacao').classList.add('active');
+                }
+            }
+
+            // Click das Categorias
+            document.getElementById('tabs').addEventListener('click', (e) => {
+                if (e.target.classList.contains('tab')) {
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    e.target.classList.add('active');
+                    renderMenu(e.target.dataset.category);
+                }
+            });
+
+            document.getElementById('searchInput').addEventListener('input', (e) => {
+                const tabAtiva = document.querySelector('.tab.active');
+                if(tabAtiva) renderMenu(tabAtiva.dataset.category, e.target.value);
+            });
+        }
+
+        async function carregarProdutosDaNuvem() {
+            try {
+                const doc = await db.collection("dados_restaurante").doc("produtos").get();
+                if (doc.exists) {
+                    const produtosSalvos = JSON.parse(doc.data().dados || '[]');
+                    allItems = produtosSalvos.filter(p => !p.manutencao);
+                    const cats = new Set(allItems.map(p => p.categoria).filter(c => c && c.trim() !== ''));
+                    categorias = Array.from(cats);
+                    
+                    document.getElementById('tabs').innerHTML = categorias.map((cat, i) => `<button class="tab ${i === 0 ? 'active' : ''}" data-category="${cat}">${cat}</button>`).join('');
+                    if (categorias.length > 0) renderMenu(categorias[0]);
+                }
+            } catch(e) { console.error("Erro Nuvem:", e); }
+        }
+
+        // --- INTERFACE E CARRINHO ---
+        function salvarIdentificacaoManual() {
+            const inputVal = document.getElementById('inputNumMesa').value.trim();
+            if (!inputVal) return showToast('Por favor, informe o número da mesa.');
+            const num = parseInt(inputVal);
+            identificacaoMesa = `Mesa ${num < 10 ? '0'+num : num}`;
+            sessionStorage.setItem('mesa_sessao', identificacaoMesa);
+            document.getElementById('modalIdentificacao').classList.remove('active');
+            atualizarHeaderMesa();
+        }
+
+        function atualizarHeaderMesa() {
+            const el = document.getElementById('mesaDisplay');
+            el.textContent = `📍 ${identificacaoMesa}`; el.style.display = 'inline-block';
+        }
+
+        function showToast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); }
+        function fecharModal(id) { document.getElementById(id).classList.remove('active'); }
+        function abrirCarrinho() { document.getElementById('cartModal').classList.add('active'); atualizarCarrinho(); }
+        
+        function abrirMeusPedidos() { document.getElementById('ordersModal').classList.add('active'); renderizarMeusPedidosFirebase(); }
+
+        function renderMenu(categoria, filtro = '') {
+            const grid = document.getElementById('menuGrid');
+            let lista = filtro ? allItems.filter(i => i.nome.toLowerCase().includes(filtro.toLowerCase())) : allItems.filter(i => i.categoria === categoria);
+
+            grid.innerHTML = lista.map(item => `
+                <div class="product-card">
+                    <div class="product-image">${item.imagemUrl && !item.imagemUrl.includes('placeholder') ? `<img src="${item.imagemUrl}">` : `<div style="font-size: 4rem;">${item.emoji || '🍽️'}</div>`}</div>
+                    <div class="product-info">
+                        <div><h3 class="product-name">${item.nome}</h3><div class="product-price">R$ ${parseFloat(item.preco).toFixed(2)}</div>
+                        <textarea id="obs-${item.id}" class="obs-input" rows="1" placeholder="Observações (ex: sem gelo)"></textarea></div>
+                        <button class="add-btn" onclick="addClick('${item.id}')">➕ Adicionar</button>
+                    </div>
+                </div>`).join('');
+        }
+
+        function addClick(id) {
+            const itemFull = allItems.find(i => String(i.id) === String(id));
+            if (!itemFull) return;
+            const obs = document.getElementById(`obs-${id}`).value;
+            const existing = carrinho.find(i => String(i.id) === String(id) && i.obs === obs);
+            if (existing) existing.quantidade++;
+            else carrinho.push({ id: itemFull.id, nome: itemFull.nome, preco: parseFloat(itemFull.preco), quantidade: 1, obs: obs, categoria: itemFull.categoria, custoUnitario: itemFull.custoProduto || 0 });
+            
+            document.getElementById(`obs-${id}`).value = ''; showToast(`${itemFull.nome} adicionado!`); atualizarContador();
+        }
+
+        function atualizarContador() { document.getElementById('cartCount').textContent = carrinho.reduce((acc, i) => acc + i.quantidade, 0); }
+
+        function atualizarCarrinho() {
+            const container = document.getElementById('cartItems');
+            if (carrinho.length === 0) return container.innerHTML = '<p style="text-align:center; padding:20px;">Vazio.</p>', document.getElementById('cartTotal').textContent = 'R$ 0,00';
+            
+            container.innerHTML = carrinho.map((item, idx) => `
+                <div class="cart-item">
+                    <div style="flex:1"><div style="font-weight:bold;">${item.quantidade}x ${item.nome}</div><div style="color:var(--terracota);">R$ ${(item.preco * item.quantidade).toFixed(2)}</div>${item.obs ? `<div class="cart-obs">📝 ${item.obs}</div>` : ''}</div>
+                    <button onclick="removerItem(${idx})" style="background:none; border:1px solid #555; color:white; width:30px; height:30px; border-radius:50%; cursor:pointer;">-</button>
+                </div>
+            `).join('');
+            document.getElementById('cartTotal').textContent = `R$ ${carrinho.reduce((acc, i) => acc + (i.preco * i.quantidade), 0).toFixed(2)}`;
+        }
+
+        function removerItem(index) { carrinho.splice(index, 1); atualizarCarrinho(); atualizarContador(); }
+
+        // --- ENVIO E LEITURA 100% FIREBASE ---
+        function finalizarPedido() {
+            if (carrinho.length === 0) return;
+            if (!identificacaoMesa) return document.getElementById('modalIdentificacao').classList.add('active');
+
+            const novoPedido = {
+                id: Date.now(),
+                data: new Date().toISOString(),
+                inicioPreparo: new Date().toISOString(),
+                nomeCliente: identificacaoMesa,
+                itens: carrinho,
+                total: carrinho.reduce((sum, item) => sum + (item.preco * item.quantidade), 0),
+                status: 'Pendente', // Bate direto no Dashboard/Cozinha!
+                tipo: 'Mesa (QR)'
+            };
+
+            db.collection("pedidos").doc(novoPedido.id.toString()).set(novoPedido).then(() => {
+                carrinho = []; atualizarContador();
+                document.getElementById('cartModal').classList.remove('active');
+                document.getElementById('successModal').classList.add('active');
+            }).catch(e => alert("Erro ao conectar com a cozinha. Verifique internet."));
+        }
+
+        // Lê o Histórico do Cliente direto da Nuvem
+        async function renderizarMeusPedidosFirebase() {
+            const container = document.getElementById('ordersList');
+            if (!identificacaoMesa) return container.innerHTML = '<p>Mesa não identificada.</p>';
+            
+            container.innerHTML = '<p style="text-align:center; color:#ccc;">Buscando na cozinha...</p>';
+            
+            try {
+                // Puxa tudo que tiver o nome da mesa atual! Sem cache local.
+                const snapshot = await db.collection("pedidos").where("nomeCliente", "==", identificacaoMesa).get();
+                if (snapshot.empty) return container.innerHTML = '<p style="text-align:center; color:#888;">Nenhum pedido hoje.</p>';
+                
+                let historicoHtml = '';
+                snapshot.forEach(doc => {
+                    const pedido = doc.data();
+                    let status = 'Finalizado', classe = 'st-pronto';
+                    if (pedido.status === 'Pendente') { status = 'Na Fila de Preparo'; classe = 'st-pendente'; }
+                    else if (pedido.status === 'Em Preparo') { status = 'A ser Preparado 🔥'; classe = 'st-preparo'; }
+                    else if (pedido.status === 'Pronto') { status = 'Pronto a Servir ✅'; classe = 'st-pronto'; }
+
+                    historicoHtml += `
+                        <div class="order-status-card">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span style="font-weight:bold;">Pedido #${String(pedido.id).slice(-4)}</span><span>${new Date(pedido.data).toLocaleTimeString().slice(0,5)}</span></div>
+                            <div style="font-size:0.9rem; color:#ccc;">${pedido.itens.length > 0 ? pedido.itens.map(i => `${i.quantidade}x ${i.nome}`).join(', ') : 'Finalizado'}</div>
+                            <span class="status-badge ${classe}">${status}</span>
+                        </div>
+                    `;
+                });
+                container.innerHTML = historicoHtml;
+            } catch(e) { container.innerHTML = '<p>Erro ao ler pedidos.</p>'; }
+        }
+
+        init();
+    </script>
+    </script>
+</body>
+</html>
+</body>
+</html>
